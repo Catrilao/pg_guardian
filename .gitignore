@@ -1,0 +1,8 @@
+.cache
+.direnv
+.pgdata
+.logfile
+compile_commands.json
+pg_guardian.bc
+pg_guardian.o
+pg_guardian.so
