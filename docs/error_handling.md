@@ -24,7 +24,8 @@ When `PG_TRY()` is is entered, Postgres calls the `sigsetjmp` function to take a
 
 If Postgres encounters `ereport(ERROR, ...)`, it does not return `-1` or `NULL` to the caller. Instead, it calls `siglongjmp`, pointing to the saved buffer. The `siglongjmp` resores the saved execution context and continues execution at the `PG_CATCH()` block.
 
-> [!Note]: This skips all the `return` statements. If a function allocated memory or aqquired a file lock before the error occurred, any cleanup code, including calls to `pfree()` or functions that releases locks, will be skipped.
+> [!NOTE]
+> This skips all the `return` statements. If a function allocated memory or acquired a file lock before the error occurred, any cleanup code, including calls to `pfree()` or functions that release locks, will be skipped.
 
 ## Cleanup Sequence
 

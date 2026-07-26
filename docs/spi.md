@@ -55,8 +55,8 @@ int SPI_execute(const * command, bool read_only, long count)
 * `read_only`: If set to `true` the command must be read-only, execution overhead is reduced a bit
 * `count`: Number of rows that will be returned, 0 for no limit. It works like `LIMIT`
 
-> [!Warning] Warning: Do not mix read-only and read-write commands in the same SPI. The read-only queries would not see the result of the read-write queries.
-> tion
+> [!WARNING]
+> Do not mix read-only and read-write commands in the same SPI. The read-only queries would not see the result of the read-write queries.
 
 4. **Finishing:**
    To disconnect from the SPI manager call
