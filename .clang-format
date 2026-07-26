@@ -3,3 +3,6 @@ SortIncludes: Never
 IndentWidth: 4
 TabWidth: 4
 UseTab: Never
+BreakAfterReturnType: AllDefinitions
+BreakBeforeBraces: Allman
+PointerAlignment: Right
