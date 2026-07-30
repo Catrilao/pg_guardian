@@ -3,21 +3,23 @@
 #include "fmgr.h"
 #include "miscadmin.h"
 
-#include "executor/spi.h"
+#include "access/xact.h"
 #include "postmaster/bgworker.h"
 #include "storage/ipc.h"
 #include "storage/latch.h"
 #include "storage/waiteventset.h"
 #include "utils/elog.h"
 #include "utils/guc.h"
-#include "utils/memutils.h"
 #include "utils/palloc.h"
+#include "utils/resowner.h"
 #include "utils/snapmgr.h"
 #include "utils/wait_classes.h"
 
 #include <signal.h>
 #include <stdio.h>
 #include <sys/socket.h>
+
+#include "analyzer.h"
 
 PG_MODULE_MAGIC;
 
@@ -66,40 +68,115 @@ handle_shutdown(SIGNAL_ARGS)
 void
 worker_main(Datum main_arg)
 {
+    GuardianAnalyzer analyzers[] = {
+        {
+            .name = "analyzer_1",
+            .query = "SELECT relname FROM pg_class",
+            .plan = NULL,
+            .analyzer_init_plan = analyzer_init_plan,
+            .analyzer_execute = analyzer_execute,
+        },
+        {
+            .name = "analyzer_2",
+            .query = "SELECT relname FROM pg_clas",
+            .plan = NULL,
+            .analyzer_init_plan = analyzer_init_plan,
+            .analyzer_execute = analyzer_execute,
+        }
+    };
+    size_t num_analyzers = sizeof(analyzers) / sizeof(analyzers[0]);
+
     pqsignal(SIGTERM, handle_shutdown);
     BackgroundWorkerUnblockSignals();
     BackgroundWorkerInitializeConnection(guardian_database, NULL, BGWORKER_BYPASS_ROLELOGINCHECK);
 
-    while (!got_sigterm)
+    for (size_t i = 0; i < num_analyzers; i++)
     {
-        WaitLatch(MyLatch,
-            WL_LATCH_SET | WL_TIMEOUT | WL_EXIT_ON_PM_DEATH,
-            20000L,
-            PG_WAIT_EXTENSION);
-        ResetLatch(MyLatch);
+        MemoryContext oldcontext = CurrentMemoryContext;
 
         PG_TRY();
         {
-            int rc;
-            char *tuple = NULL;
-
             SetCurrentStatementStartTimestamp();
             StartTransactionCommand();
             PushActiveSnapshot(GetTransactionSnapshot());
             SPI_connect();
 
-            rc = SPI_execute("SELECT relname FROM pg_class", true, 1);
-            if (rc != SPI_OK_SELECT)
-                ereport(ERROR,
-                    errmsg("failed to fetch data"),
-                    errdetail("SPI returned: %d", rc));
+            analyzers[i].analyzer_init_plan(&analyzers[i]);
 
-            if (SPI_processed > 0)
-                tuple = SPI_getvalue(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, 1);
-            if (tuple)
+            SPI_finish();
+            PopActiveSnapshot();
+            CommitTransactionCommand();
+        }
+        PG_CATCH();
+        {
+            ErrorData *edata;
+
+            MemoryContextSwitchTo(oldcontext);
+
+            edata = CopyErrorData();
+            FlushErrorState();
+
+            AbortCurrentTransaction();
+
+            elog(WARNING, "analyzer init error: %s", edata->message);
+            FreeErrorData(edata);
+        }
+        PG_END_TRY();
+    }
+
+    while (!got_sigterm)
+    {
+        MemoryContext oldcontext = CurrentMemoryContext;
+
+        WaitLatch(MyLatch,
+            WL_LATCH_SET | WL_TIMEOUT | WL_EXIT_ON_PM_DEATH,
+            5000L,
+            PG_WAIT_EXTENSION);
+        ResetLatch(MyLatch);
+
+        PG_TRY();
+        {
+            SetCurrentStatementStartTimestamp();
+            StartTransactionCommand();
+            PushActiveSnapshot(GetTransactionSnapshot());
+            SPI_connect();
+
+            for (size_t i = 0; i < num_analyzers; i++)
             {
-                ereport(LOG, errmsg("relname: %s", tuple));
-                pfree(tuple);
+                MemoryContext callercontext = CurrentMemoryContext;
+                ResourceOwner callerowner = CurrentResourceOwner;
+
+                if (!analyzers[i].plan)
+                    continue;
+
+                BeginInternalSubTransaction(NULL);
+
+                PG_TRY();
+                {
+                    analyzers[i].analyzer_execute(&analyzers[i]);
+
+                    ReleaseCurrentSubTransaction();
+                    MemoryContextSwitchTo(callercontext);
+                    CurrentResourceOwner = callerowner;
+                }
+                PG_CATCH();
+                {
+                    ErrorData *edata;
+
+                    MemoryContextSwitchTo(callercontext);
+
+                    edata = CopyErrorData();
+                    FlushErrorState();
+
+                    RollbackAndReleaseCurrentSubTransaction();
+
+                    MemoryContextSwitchTo(callercontext);
+                    CurrentResourceOwner = callerowner;
+
+                    elog(WARNING, "%s", edata->message);
+                    FreeErrorData(edata);
+                }
+                PG_END_TRY();
             }
 
             SPI_finish();
@@ -108,13 +185,11 @@ worker_main(Datum main_arg)
         }
         PG_CATCH();
         {
-            MemoryContext oldcontext;
             ErrorData *edata;
 
-            oldcontext = MemoryContextSwitchTo(TopMemoryContext);
-            edata = CopyErrorData();
             MemoryContextSwitchTo(oldcontext);
 
+            edata = CopyErrorData();
             FlushErrorState();
 
             AbortCurrentTransaction();
