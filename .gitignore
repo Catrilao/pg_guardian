@@ -1,8 +1,19 @@
-.cache
-.direnv
-.pgdata
-.logfile
+# Build artifacts
+*.o
+*.so
+*.bc
+
+# Generated files
 compile_commands.json
-pg_guardian.bc
-pg_guardian.o
-pg_guardian.so
+
+# Development environment
+.cache/
+.direnv/
+
+# Local runtime data
+.pgdata/
+
+# Logs
+*.log
+log_*
+.logfile

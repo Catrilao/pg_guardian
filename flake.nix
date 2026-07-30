@@ -12,6 +12,15 @@
     system = "x86_64-linux";
     pkgs = nixpkgs.legacyPackages.${system};
     pg = pkgs.postgresql_18;
+
+    start = pkgs.writeShellScriptBin "start" ''
+      pg_ctl -D .pgdata -l .logfile start
+    '';
+
+    stop = pkgs.writeShellScriptBin "stop" ''
+      pg_ctl -D .pgdata stop
+      rm .logfile
+    '';
   in {
 
     packages.${system}.default = pkgs.stdenv.mkDerivation {
@@ -55,6 +64,7 @@
           rustfmt
           ;
         inherit (pg) pg_config;
+        inherit start stop;
       };
 
       buildInputs = builtins.attrValues {

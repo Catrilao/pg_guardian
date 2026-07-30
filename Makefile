@@ -1,4 +1,8 @@
-MODULES	= src/pg_guardian
+MODULE_big = src/pg_guardian
+
+OBJS = \
+       src/pg_guardian.o \
+       src/analyzer.o
 
 EXTENSION = pg_guardian
 
