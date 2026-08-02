@@ -21,6 +21,12 @@
       pg_ctl -D .pgdata stop
       rm .logfile
     '';
+
+    redo = pkgs.writeShellScriptBin "redo" ''
+      make clean && make
+      stop
+      start
+    '';
   in {
 
     packages.${system}.default = pkgs.stdenv.mkDerivation {
@@ -64,7 +70,7 @@
           rustfmt
           ;
         inherit (pg) pg_config;
-        inherit start stop;
+        inherit start stop redo;
       };
 
       buildInputs = builtins.attrValues {
