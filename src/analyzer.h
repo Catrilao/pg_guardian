@@ -4,16 +4,30 @@
 #include "postgres.h"
 #include "executor/spi.h"
 
+#define GUARDIAN_MAX_PARAMETERS 10
+
+typedef struct GuardianParameter
+{
+    Oid type;
+    Datum value;
+    bool isnull;
+} GuardianParameter;
 
 typedef struct GuardianAnalyzer {	
-    char *name;
-    char *query;
+    const char *name;
+    const char *query;
+
+    int nargs;
+    GuardianParameter *params;
+
     SPIPlanPtr plan;
-    void (*analyzer_init_plan)(struct GuardianAnalyzer *self);
-    void (*analyzer_execute)(struct GuardianAnalyzer *self);
+    void (*init_plan)(struct GuardianAnalyzer *self);
+    void (*execute)(struct GuardianAnalyzer *self);
+
+    void (*process_result)(struct GuardianAnalyzer *self);
 } GuardianAnalyzer;
 
 void analyzer_init_plan(struct GuardianAnalyzer *self);
-void analyzer_execute(struct GuardianAnalyzer *self);
+void analyzer_execute_plan(struct GuardianAnalyzer *self);
 
 #endif

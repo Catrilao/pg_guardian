@@ -1,46 +1,70 @@
-#include "postgres.h"
-#include "executor/spi.h"
 #include "analyzer.h"
-#include "utils/elog.h"
+#include "executor/spi.h"
 
 void
 analyzer_init_plan(struct GuardianAnalyzer *self)
 {
-    int rc;
+    Oid argtypes[GUARDIAN_MAX_PARAMETERS];
 
-    self->plan = SPI_prepare(self->query, 0, NULL);
+    if (self->nargs < 0 || self->nargs > GUARDIAN_MAX_PARAMETERS)
+        ereport(ERROR,
+                errmsg("invalid or too many parameters for analyzer \"%s\"", self->name),
+                errdetail("max: %d, given: %d", GUARDIAN_MAX_PARAMETERS, self->nargs));
+
+    for (int i = 0; i < self->nargs; i++)
+    {
+        argtypes[i] = self->params[i].type;
+    }
+
+    if (self->plan)
+    {
+        SPI_freeplan(self->plan);
+        self->plan = NULL;
+    }
+
+    self->plan = SPI_prepare(self->query, self->nargs, argtypes);
     if (self->plan == NULL)
     {
         ereport(WARNING,
-            errmsg("SPI_prepare failed"));
+                errmsg("SPI_prepare failed for analyzer \"%s\": %s", self->name, SPI_result_code_string(SPI_result)));
     }
     else
     {
-        rc = SPI_keepplan(self->plan);
+        int rc = SPI_keepplan(self->plan);
         if (rc != 0)
             ereport(ERROR,
-                errmsg("SPI_keepplan failed"));
+                    errmsg("SPI_keepplan failed for analyzer \"%s\"", self->name));
     }
 }
 
 void
-analyzer_execute(struct GuardianAnalyzer *self)
+analyzer_execute_plan(struct GuardianAnalyzer *self)
 {
     int rc;
-    char *tuple = NULL;
+    Datum values[GUARDIAN_MAX_PARAMETERS];
+    char nulls[GUARDIAN_MAX_PARAMETERS];
 
-    rc = SPI_execute_plan(self->plan, NULL, NULL, true, 1);
-    if (rc != SPI_OK_SELECT)
+    if (self->nargs < 0 || self->nargs > GUARDIAN_MAX_PARAMETERS)
         ereport(ERROR,
-            errmsg("failed to fetch data"),
-            errdetail("SPI_execute_plan returned: %d", rc));
+                errmsg("invalid or too many parameters for analyzer \"%s\"", self->name),
+                errdetail("max: %d, given: %d", GUARDIAN_MAX_PARAMETERS, self->nargs));
 
-    if (SPI_processed > 0 && SPI_tuptable != NULL)
-        tuple = SPI_getvalue(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, 1);
-
-    if (tuple)
+    for (int i = 0; i < self->nargs; i++)
     {
-        ereport(LOG, errmsg("relname: %s, name: %s", tuple, self->name));
-        pfree(tuple);
+        values[i] = self->params[i].value;
+        nulls[i] = self->params[i].isnull ? 'n' : ' ';
     }
+
+    rc = SPI_execute_plan(self->plan,
+                          values,
+                          nulls,
+                          true,
+                          0);
+
+    if (rc < 0)
+        ereport(ERROR,
+                errmsg("SPI_execute_plan returned %s", SPI_result_code_string(rc)));
+
+    if (SPI_processed > 0 && SPI_tuptable != NULL && self->process_result != NULL)
+        self->process_result(self);
 }
