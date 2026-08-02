@@ -52,10 +52,15 @@ _PG_init(void)
     RegisterBackgroundWorker(&worker);
 
     DefineCustomStringVariable("pg_guardian.database",
-        "Database to monitor", NULL,
-        &guardian_database, "postgres",
-        PGC_POSTMASTER,
-        0, NULL, NULL, NULL);
+                               "Database to monitor",
+                               NULL,
+                               &guardian_database,
+                               "postgres",
+                               PGC_POSTMASTER,
+                               0,
+                               NULL,
+                               NULL,
+                               NULL);
 }
 
 static void
@@ -129,9 +134,9 @@ worker_main(Datum main_arg)
         MemoryContext oldcontext = CurrentMemoryContext;
 
         WaitLatch(MyLatch,
-            WL_LATCH_SET | WL_TIMEOUT | WL_EXIT_ON_PM_DEATH,
-            5000L,
-            PG_WAIT_EXTENSION);
+                  WL_LATCH_SET | WL_TIMEOUT | WL_EXIT_ON_PM_DEATH,
+                  5000L,
+                  PG_WAIT_EXTENSION);
         ResetLatch(MyLatch);
 
         PG_TRY();

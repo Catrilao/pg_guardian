@@ -6,3 +6,5 @@ UseTab: Never
 BreakAfterReturnType: AllDefinitions
 BreakBeforeBraces: Allman
 PointerAlignment: Right
+AlignAfterOpenBracket: Align
+BinPackArguments: false
