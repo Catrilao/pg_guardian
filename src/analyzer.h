@@ -30,4 +30,7 @@ typedef struct GuardianAnalyzer {
 void analyzer_init_plan(struct GuardianAnalyzer *self);
 void analyzer_execute_plan(struct GuardianAnalyzer *self);
 
+
+GuardianAnalyzer *get_storage_analyzer(void);
+
 #endif

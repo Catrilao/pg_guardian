@@ -73,23 +73,10 @@ handle_shutdown(SIGNAL_ARGS)
 void
 worker_main(Datum main_arg)
 {
-    GuardianAnalyzer analyzers[] = {
-        {
-            .name = "analyzer_1",
-            .query = "SELECT relname FROM pg_class",
-            .plan = NULL,
-            .analyzer_init_plan = analyzer_init_plan,
-            .analyzer_execute = analyzer_execute,
-        },
-        {
-            .name = "analyzer_2",
-            .query = "SELECT relname FROM pg_clas",
-            .plan = NULL,
-            .analyzer_init_plan = analyzer_init_plan,
-            .analyzer_execute = analyzer_execute,
-        }
-    };
-    size_t num_analyzers = sizeof(analyzers) / sizeof(analyzers[0]);
+    GuardianAnalyzer *analyzers[10];
+    int num_analyzers = 0;
+
+    analyzers[num_analyzers++] = get_storage_analyzer();
 
     pqsignal(SIGTERM, handle_shutdown);
     BackgroundWorkerUnblockSignals();
@@ -106,7 +93,7 @@ worker_main(Datum main_arg)
             PushActiveSnapshot(GetTransactionSnapshot());
             SPI_connect();
 
-            analyzers[i].analyzer_init_plan(&analyzers[i]);
+            analyzers[i]->init_plan(analyzers[i]);
 
             SPI_finish();
             PopActiveSnapshot();
@@ -151,14 +138,14 @@ worker_main(Datum main_arg)
                 MemoryContext callercontext = CurrentMemoryContext;
                 ResourceOwner callerowner = CurrentResourceOwner;
 
-                if (!analyzers[i].plan)
+                if (!analyzers[i]->plan)
                     continue;
 
                 BeginInternalSubTransaction(NULL);
 
                 PG_TRY();
                 {
-                    analyzers[i].analyzer_execute(&analyzers[i]);
+                    analyzers[i]->execute(analyzers[i]);
 
                     ReleaseCurrentSubTransaction();
                     MemoryContextSwitchTo(callercontext);
