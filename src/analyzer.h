@@ -21,7 +21,9 @@ typedef struct GuardianAnalyzer {
     GuardianParameter *params;
 
     SPIPlanPtr plan;
+    void (*register_gucs)(void);
     void (*init_plan)(struct GuardianAnalyzer *self);
+    void (*pre_execute)(struct GuardianAnalyzer *self);
     void (*execute)(struct GuardianAnalyzer *self);
 
     void (*process_result)(struct GuardianAnalyzer *self);

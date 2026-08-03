@@ -16,6 +16,7 @@
 #include "utils/wait_classes.h"
 
 #include <signal.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <sys/socket.h>
 
@@ -27,7 +28,13 @@ PGDLLEXPORT void worker_main(Datum);
 PGDLLEXPORT void _PG_init(void);
 
 static volatile sig_atomic_t got_sigterm = false;
+static volatile sig_atomic_t got_sighup = false;
+
 static char *guardian_database;
+
+#define MAX_ANALYZERS 10
+static GuardianAnalyzer *analyzers[MAX_ANALYZERS];
+static int num_analyzers;
 
 void
 _PG_init(void)
@@ -61,6 +68,14 @@ _PG_init(void)
                                NULL,
                                NULL,
                                NULL);
+
+    analyzers[num_analyzers++] = get_storage_analyzer();
+
+    for (int i = 0; i < num_analyzers; i++)
+    {
+        if (analyzers[i]->register_gucs)
+            analyzers[i]->register_gucs();
+    }
 }
 
 static void
@@ -70,15 +85,18 @@ handle_shutdown(SIGNAL_ARGS)
     SetLatch(MyLatch);
 }
 
+static void
+handle_sighup(SIGNAL_ARGS)
+{
+    got_sighup = true;
+    SetLatch(MyLatch);
+}
+
 void
 worker_main(Datum main_arg)
 {
-    GuardianAnalyzer *analyzers[10];
-    int num_analyzers = 0;
-
-    analyzers[num_analyzers++] = get_storage_analyzer();
-
     pqsignal(SIGTERM, handle_shutdown);
+    pqsignal(SIGHUP, handle_sighup);
     BackgroundWorkerUnblockSignals();
     BackgroundWorkerInitializeConnection(guardian_database, NULL, BGWORKER_BYPASS_ROLELOGINCHECK);
 
@@ -125,6 +143,14 @@ worker_main(Datum main_arg)
                   5000L,
                   PG_WAIT_EXTENSION);
         ResetLatch(MyLatch);
+
+        if (got_sighup)
+        {
+            got_sighup = false;
+            ProcessConfigFile(PGC_SIGHUP);
+            ereport(LOG,
+                    errmsg("pg_guardian: reloaded configuration"));
+        }
 
         PG_TRY();
         {

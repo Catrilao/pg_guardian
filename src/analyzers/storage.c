@@ -1,10 +1,17 @@
-#include "postgres.h"
-
-#include "catalog/pg_type_d.h"
-
 #include "../analyzer.h"
 
-static GuardianParameter params[1];
+#include "catalog/pg_type_d.h"
+#include "utils/guc.h"
+
+#include <limits.h>
+
+static int storage_page_threshold;
+static int storage_limit_response;
+
+static GuardianParameter params[2] = {
+    { .type = INT4OID, .value = 0, .isnull = false },
+    { .type = INT4OID, .value = 0, .isnull = false },
+};
 
 /* TODO: add specific processing */
 static inline void
@@ -23,10 +30,40 @@ storage_process_result(struct GuardianAnalyzer *self)
 }
 
 static void
-super_mega_complex_init(struct GuardianAnalyzer *self)
+storage_pre_execute(struct GuardianAnalyzer *self)
 {
-    ereport(LOG,
-            errmsg("complex, name: %s", self->name));
+    self->params[0].value = Int32GetDatum(storage_page_threshold);
+    self->params[1].value = Int32GetDatum(storage_limit_response);
+}
+
+static void
+storage_register_gucs(void)
+{
+    DefineCustomIntVariable("pg_guardian.storage_page_threshold",
+                            "Minimum pages for storage analyzer",
+                            NULL,
+                            &storage_page_threshold,
+                            25,
+                            0,
+                            INT_MAX,
+                            PGC_SIGHUP,
+                            0,
+                            NULL,
+                            NULL,
+                            NULL);
+
+    DefineCustomIntVariable("pg_guardian.storage_limit_response",
+                            "Maximum number of rows to be returned",
+                            NULL,
+                            &storage_limit_response,
+                            3,
+                            1,
+                            INT_MAX,
+                            PGC_SIGHUP,
+                            0,
+                            NULL,
+                            NULL,
+                            NULL);
 }
 
 /* TODO: make a complex query with many parameters
@@ -34,28 +71,19 @@ super_mega_complex_init(struct GuardianAnalyzer *self)
  */
 static GuardianAnalyzer storage_analyzer = {
     .name = "storage_analyzer",
-    .query = "SELECT relname FROM pg_class WHERE relpages > $1",
-    .nargs = 1000000,
+    .query = "SELECT relname FROM pg_class WHERE relpages > $1 LIMIT $2",
+    .nargs = 2,
     .plan = NULL,
     .params = params,
-    .init_plan = super_mega_complex_init,
+    .init_plan = analyzer_init_plan,
+    .register_gucs = storage_register_gucs,
+    .pre_execute = storage_pre_execute,
     .execute = analyzer_execute_plan,
     .process_result = storage_process_result
 };
 
-/* TODO: change the parameters during live execution */
 GuardianAnalyzer *
 get_storage_analyzer(void)
 {
-    static bool initialized = false;
-
-    if (!initialized)
-    {
-        params[0].type = INT4OID;
-        params[0].value = Int32GetDatum(25);
-        params[0].isnull = false;
-        initialized = true;
-    }
-
     return &storage_analyzer;
 }

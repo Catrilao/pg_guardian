@@ -1,5 +1,4 @@
 #include "analyzer.h"
-#include "executor/spi.h"
 
 void
 analyzer_init_plan(struct GuardianAnalyzer *self)
@@ -43,6 +42,9 @@ analyzer_execute_plan(struct GuardianAnalyzer *self)
     int rc;
     Datum values[GUARDIAN_MAX_PARAMETERS];
     char nulls[GUARDIAN_MAX_PARAMETERS];
+
+    if (self->pre_execute != NULL)
+        self->pre_execute(self);
 
     if (self->nargs < 0 || self->nargs > GUARDIAN_MAX_PARAMETERS)
         ereport(ERROR,
